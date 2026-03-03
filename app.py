@@ -7,13 +7,18 @@ import json
 
 st.set_page_config(page_title="Quản Lý Duti's Home", layout="wide")
 
-# ================= 1. CẤU HÌNH API BẰNG KÉT SẮT BÍ MẬT =================
+# ================= 1. CẤU HÌNH API THÔNG MINH (CHẠY CẢ PC & CLOUD) =================
 @st.cache_resource
 def get_google_sheet():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    # Lấy chìa khóa từ két sắt của Streamlit Cloud thay vì đọc file json
-    key_dict = json.loads(st.secrets["GCP_KEY"])
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
+    try:
+        # Cách 1: Thử tìm trong Két sắt (khi chạy trên Streamlit Cloud / Điện thoại)
+        key_dict = json.loads(st.secrets["GCP_KEY"])
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
+    except Exception:
+        # Cách 2: Nếu không có Két sắt, tự động tìm file json (khi chạy trên Máy tính)
+        creds = ServiceAccountCredentials.from_json_keyfile_name('chia_khoa.json', scope)
+        
     client = gspread.authorize(creds)
     sheet = client.open("DuTi Homestay").worksheet("Mật khẩu cổng")
     return sheet
