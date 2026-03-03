@@ -3,20 +3,19 @@ import pandas as pd
 from datetime import date, timedelta, datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import json
 
 st.set_page_config(page_title="Quản Lý Duti's Home", layout="wide")
 
-# ================= 1. CẤU HÌNH API THÔNG MINH (CHẠY CẢ PC & CLOUD) =================
+# ================= 1. CẤU HÌNH API THÔNG MINH =================
 @st.cache_resource
 def get_google_sheet():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     try:
-        # Cách 1: Thử tìm trong Két sắt (khi chạy trên Streamlit Cloud / Điện thoại)
-        key_dict = json.loads(st.secrets["GCP_KEY"])
+        # Cách 1: Chạy trên Cloud (lấy Két sắt đã định dạng TOML)
+        key_dict = dict(st.secrets["gcp_service_account"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
     except Exception:
-        # Cách 2: Nếu không có Két sắt, tự động tìm file json (khi chạy trên Máy tính)
+        # Cách 2: Chạy trên Máy tính PC (lấy từ file chia_khoa.json)
         creds = ServiceAccountCredentials.from_json_keyfile_name('chia_khoa.json', scope)
         
     client = gspread.authorize(creds)
