@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import date, timedelta, datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import re
 
 st.set_page_config(page_title="Quản Lý Duti's Home", layout="wide")
 
@@ -41,14 +42,16 @@ df_valid_dates = df.dropna(subset=['Date_In', 'Date_Out'])
 today = pd.to_datetime(date.today())
 ngay_toi_5 = today + timedelta(days=5)
 
-def format_tien(so_tien):
-    if so_tien == 0: return "0 đ"
-    return f"{so_tien:,.0f} đ".replace(",", ".")
+def format_tien(so_tien, la_doanh_thu=False):
+    if so_tien == 0:
+        return "0 đ" if la_doanh_thu else ""
+    if not so_tien: return ""
+    return f"{int(so_tien):,.0f} đ".replace(",", ".")
 
 def parse_tien(chuoi_tien):
-    if not chuoi_tien or chuoi_tien == "": return 0
-    so = str(chuoi_tien).replace(" đ", "").replace(".", "").replace(",", "")
-    if so.isdigit(): return int(so)
+    if not chuoi_tien or str(chuoi_tien).strip() == "": return 0
+    so = re.sub(r'[^\d]', '', str(chuoi_tien))
+    if so: return int(so)
     return 0
 
 ds_don_phong = ["", "Duti", "Bé NA", "C. Xuân"]
@@ -63,8 +66,8 @@ if st.session_state.do_clear_search:
 
 if st.session_state.do_clear_new:
     st.session_state.new_khach = ""
-    st.session_state.new_dt = 0
-    st.session_state.new_coc = 0
+    st.session_state.new_dt = ""
+    st.session_state.new_coc = ""
     st.session_state.new_don = ""
     st.session_state.new_ghi = ""
     st.session_state.new_phong = "101 Moon"
@@ -108,7 +111,7 @@ with tab1:
                     styles.append('')
             return styles
             
-        cols_to_show = ['Phòng', 'Ngày check in', 'Ngày check out', 'Khách', 'Doanh thu', 'Mã khóa cửa', 'Tạo/Gửi mã', 'Cọc', 'Cần tt', 'Ghi chú']
+        cols_to_show = ['Phòng', 'Ngày check in', 'Ngày check out', 'Khách', 'Doanh thu', 'Mã khóa cửa', 'Ghi chú']
         styled_df = df_hien_thi[cols_to_show].style.apply(highlight_today_tomorrow, subset=['Ngày check in', 'Ngày check out'])
         
         st.dataframe(styled_df)
@@ -132,8 +135,8 @@ with tab1:
                 st.error(f"**Phòng {row.get('Phòng', '')}** - Khách: **{row.get('Khách', '')}**\n\n"
                          f"Ngày: **{row.get('Ngày check in', '')}** đến **{row.get('Ngày check out', '')}** {txt_ghi_chu}")
                 
-                st.markdown("🔑 **Mã khóa:** (Rê chuột vào góc phải ô bên dưới để Copy)")
-                st.code(row.get('Mã khóa cửa', 'Chưa có'), language="plaintext")
+                st.markdown("🔑 **Mã khóa:** (Nhấn vào góc phải ô bên dưới để Copy)")
+                st.code(row.get('Mã khóa cổng', 'Chưa có'), language="plaintext")
                          
                 if st.button(f"Đã tạo và gửi mã cho {row.get('Khách', '')}", key=f"gui_ma_{index}"):
                     col_index = df.columns.get_loc('Tạo/Gửi mã') + 1
@@ -173,9 +176,10 @@ with tab1:
                     st.write(f"Phòng **{row.get('Phòng', '')}** - Khách: **{row.get('Khách', '')}** ({row.get('Ngày check in', '')} -> {row.get('Ngày check out', '')})")
                     c_dt1, c_dt2 = st.columns([3, 1])
                     with c_dt1:
-                        nhap_nhanh_dt = st.number_input("Doanh thu (VNĐ)", min_value=0, step=10000, key=f"nhanh_dt_{index}", label_visibility="collapsed")
+                        nhap_nhanh_dt_str = st.text_input("Doanh thu (VNĐ)", key=f"nhanh_dt_{index}", label_visibility="collapsed")
                     with c_dt2:
                         if st.button("Lưu", key=f"btn_dt_{index}", use_container_width=True):
+                            nhap_nhanh_dt = parse_tien(nhap_nhanh_dt_str)
                             tien_coc = parse_tien(row.get('Cọc', ''))
                             can_tt = 0
                             if tien_coc > 0:
@@ -183,8 +187,11 @@ with tab1:
                                 
                             col_dt = df.columns.get_loc('Doanh thu') + 1
                             col_cantt = df.columns.get_loc('Cần tt') + 1
-                            sheet.update_cell(index + 2, col_dt, format_tien(nhap_nhanh_dt))
-                            sheet.update_cell(index + 2, col_cantt, format_tien(can_tt))
+                            
+                            val_dt = format_tien(nhap_nhanh_dt, la_doanh_thu=True) if nhap_nhanh_dt_str.strip() != "" else ""
+                            
+                            sheet.update_cell(index + 2, col_dt, val_dt)
+                            sheet.update_cell(index + 2, col_cantt, format_tien(can_tt, la_doanh_thu=False))
                             st.rerun()
 
     with col_cb4:
@@ -222,8 +229,11 @@ with tab2:
         ngay_out_moi = st.date_input("Ngày Check-out:", key="new_out")
 
     with c2:
-        doanh_thu = st.number_input("Doanh thu (VNĐ):", min_value=0, step=10000, key="new_dt")
-        tien_coc = st.number_input("Tiền cọc (VNĐ):", min_value=0, step=10000, key="new_coc")
+        doanh_thu_str = st.text_input("Doanh thu (VNĐ):", key="new_dt")
+        tien_coc_str = st.text_input("Tiền cọc (VNĐ):", key="new_coc")
+        
+        doanh_thu = parse_tien(doanh_thu_str)
+        tien_coc = parse_tien(tien_coc_str)
         
         can_tt = 0
         if tien_coc > 0:
@@ -245,9 +255,9 @@ with tab2:
     xac_nhan_bo_qua = False
     
     if not df_trung.empty and khach_moi != "":
-        st.error("🚨 PHÁT HIỆN TRÙNG LỊCH! Phòng này đã có khách đặt đè lên khoảng thời gian trên:")
+        st.error("🚨 PHÁT HIỆN TRÙNG LỊCH! Phòng này đã có khách đặt ít nhất 1 đêm trong khoảng thời gian trên:")
         st.dataframe(df_trung[['Phòng', 'Khách', 'Ngày check in', 'Ngày check out']])
-        xac_nhan_bo_qua = st.checkbox("⚠️ Bỏ qua cảnh báo và vẫn tiếp tục tạo lượt đặt phòng này")
+        xac_nhan_bo_qua = st.checkbox("⚠️ Bỏ qua cảnh báo và tiếp tục tạo lượt đặt phòng này")
         if not xac_nhan_bo_qua:
             cho_phep_luu = False
 
@@ -259,10 +269,12 @@ with tab2:
             col_c = sheet.col_values(3) 
             dong_moi_index = len(col_c) + 1
             
+            val_dt = format_tien(doanh_thu, la_doanh_thu=True) if doanh_thu_str.strip() != "" else ""
+            
             du_lieu_nhay_coc = [
                 {'range': f'A{dong_moi_index}:D{dong_moi_index}', 'values': [[dong_moi_index - 1, phong_moi, ngay_in_moi.strftime("%d/%m/%Y"), ngay_out_moi.strftime("%d/%m/%Y")]]},
                 {'range': f'F{dong_moi_index}:G{dong_moi_index}', 'values': [[khach_moi, don_phong]]},
-                {'range': f'I{dong_moi_index}:L{dong_moi_index}', 'values': [[format_tien(doanh_thu), format_tien(tien_coc), format_tien(can_tt), ghi_chu]]}
+                {'range': f'I{dong_moi_index}:L{dong_moi_index}', 'values': [[val_dt, format_tien(tien_coc, la_doanh_thu=False), format_tien(can_tt, la_doanh_thu=False), ghi_chu]]}
             ]
             
             luu_thanh_cong = False
@@ -319,8 +331,11 @@ with tab3:
                         e_ngay_out = st.date_input("Check-out:", e_out)
                     
                     with s2:
-                        e_dt = st.number_input("Doanh thu:", value=parse_tien(row_cu['Doanh thu']), step=10000)
-                        e_coc = st.number_input("Cọc:", value=parse_tien(row_cu['Cọc']), step=10000)
+                        e_dt_str = st.text_input("Doanh thu:", value=row_cu.get('Doanh thu', ''))
+                        e_coc_str = st.text_input("Cọc:", value=row_cu.get('Cọc', ''))
+                        
+                        e_dt = parse_tien(e_dt_str)
+                        e_coc = parse_tien(e_coc_str)
                         
                         try: idx_don = ds_don_phong.index(row_cu.get('Dọn phòng', ''))
                         except: idx_don = 0
@@ -363,10 +378,12 @@ with tab3:
                     elif e_ngay_out <= e_ngay_in: st.error("❌ Ngày check-out phải lớn hơn!")
                     elif not df_trung_e.empty and not e_bo_qua: st.error("❌ Vui lòng tick ô bỏ qua cảnh báo trùng lịch!")
                     else:
+                        val_dt = format_tien(e_dt, la_doanh_thu=True) if e_dt_str.strip() != "" else ""
+                        
                         data_sua_nhay_coc = [
                             {'range': f'A{row_sheet_idx}:D{row_sheet_idx}', 'values': [[row_cu['STT'], e_phong, e_ngay_in.strftime("%d/%m/%Y"), e_ngay_out.strftime("%d/%m/%Y")]]},
                             {'range': f'F{row_sheet_idx}:G{row_sheet_idx}', 'values': [[e_khach, e_don]]},
-                            {'range': f'I{row_sheet_idx}:L{row_sheet_idx}', 'values': [[format_tien(e_dt), format_tien(e_coc), format_tien(e_can_tt), e_ghi]]}
+                            {'range': f'I{row_sheet_idx}:L{row_sheet_idx}', 'values': [[val_dt, format_tien(e_coc, la_doanh_thu=False), format_tien(e_can_tt, la_doanh_thu=False), e_ghi]]}
                         ]
                         
                         sua_thanh_cong = False
