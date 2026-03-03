@@ -129,14 +129,15 @@ with tab1:
             st.success("Tuyệt vời! Đã gửi mã cho tất cả các khách sắp đến.")
         else:
             for index, row in chua_gui_ma.iterrows():
-                ghi_chu = row.get('Ghi chú', '')
-                txt_ghi_chu = f" | Ghi chú: *{ghi_chu}*" if ghi_chu else ""
+                ghi_chu = str(row.get('Ghi chú', '')).strip()
+                txt_ghi_chu = f"\n\n**Ghi chú:** *{ghi_chu}*" if ghi_chu else ""
                 
                 st.error(f"**Phòng {row.get('Phòng', '')}** - Khách: **{row.get('Khách', '')}**\n\n"
-                         f"Ngày: **{row.get('Ngày check in', '')}** đến **{row.get('Ngày check out', '')}** {txt_ghi_chu}")
+                         f"Ngày: **{row.get('Ngày check in', '')}** đến **{row.get('Ngày check out', '')}**{txt_ghi_chu}")
                 
                 st.markdown("🔑 **Mã khóa:** (Nhấn vào góc phải ô bên dưới để Copy)")
-                st.code(row.get('Mã khóa cổng', 'Chưa có'), language="plaintext")
+                ma_khoa = str(row.get('Mã khóa cửa', '')).strip()
+                st.code(ma_khoa if ma_khoa else 'Chưa có', language="plaintext")
                          
                 if st.button(f"Đã tạo và gửi mã cho {row.get('Khách', '')}", key=f"gui_ma_{index}"):
                     col_index = df.columns.get_loc('Tạo/Gửi mã') + 1
