@@ -12,7 +12,7 @@ st.set_page_config(page_title="Quản Lý Duti's Home", layout="wide")
 # ================= ĐỔI MÀU & IN ĐẬM TOÀN BỘ NÚT BẤM =================
 st.markdown("""
 <style>
-/* 1. In đậm chữ cho tất cả các nút */
+/* 1. IN ĐẬM TẤT CẢ CHỮ TRONG NÚT BẤM */
 div.stButton > button p, div.stFormSubmitButton > button p {
     font-weight: bold !important;
 }
@@ -123,14 +123,12 @@ def load_data():
 df = load_data()
 df_valid_dates = df.dropna(subset=['Date_In', 'Date_Out'])
 
-# Lấy dữ liệu 2 sheet phụ
 data_cp = get_raw_cp()
 df_cp = pd.DataFrame(data_cp[1:], columns=data_cp[0]) if len(data_cp) > 1 else pd.DataFrame()
 if not df_cp.empty: 
     df_cp.columns = df_cp.columns.str.strip()
     df_cp = df_cp.loc[:, ~df_cp.columns.duplicated()]
 
-# Xử lý Cột E cho sheet Thanh toán hàng tháng
 data_tt = get_raw_tt()
 if len(data_tt) > 1:
     cols_tt = [str(c).strip() for c in data_tt[0]]
@@ -163,18 +161,36 @@ def get_col_letter(col_name, default_letter):
         return default_letter
 
 def parse_tien(chuoi_tien):
-    if chuoi_tien is None or str(chuoi_tien).strip() == "": return None
-    chuoi_sach = str(chuoi_tien).replace(',', '').replace('.', '').replace(' đ', '').replace('đ', '').replace(' ', '')
+    if pd.isna(chuoi_tien) or chuoi_tien is None or str(chuoi_tien).strip() == "": return None
+    chuoi_sach = re.sub(r'[^\d-]', '', str(chuoi_tien))
     try:
         return int(chuoi_sach)
     except:
-        match = re.search(r'-?\d+', str(chuoi_tien))
-        if match: return int(match.group())
         return 0
 
 def format_tien_ui(so_tien):
     if so_tien is None: return ""
     return f"{int(so_tien):,.0f} đ".replace(",", ".")
+
+# Hàm phụ trợ tạo chuỗi Tăng/Giảm theo PHẦN TRĂM (%)
+def get_delta_html(curr, prev):
+    if prev == 0 or pd.isna(prev): return ""
+    d = ((curr - prev) / prev) * 100
+    if d > 0: return f"<span style='color:#2ecc71; font-weight:bold; font-size:0.9em;'> (⬆ {d:.1f}%)</span>"
+    elif d < 0: return f"<span style='color:#e74c3c; font-weight:bold; font-size:0.9em;'> (⬇ {abs(d):.1f}%)</span>"
+    return "<span style='color:gray; font-weight:bold; font-size:0.9em;'> (0%)</span>"
+
+def get_delta_val(curr, prev):
+    if prev == 0 or pd.isna(prev): return 0
+    return ((curr - prev) / prev) * 100
+
+# Hàm phụ trợ tạo chuỗi Tăng/Giảm theo SỐ TIỀN (VNĐ) dành riêng cho ADR
+def get_delta_money_html(curr, prev):
+    if prev == 0 or pd.isna(prev): return ""
+    d = curr - prev
+    if d > 0: return f"<span style='color:#2ecc71; font-weight:bold; font-size:0.9em;'> (⬆ {format_tien_ui(d)})</span>"
+    elif d < 0: return f"<span style='color:#e74c3c; font-weight:bold; font-size:0.9em;'> (⬇ {format_tien_ui(abs(d))})</span>"
+    return "<span style='color:gray; font-weight:bold; font-size:0.9em;'> (0 đ)</span>"
 
 ds_don_phong = ["", "Duti", "Bé NA", "C. Xuân"]
 ds_hang_muc_cp = ["Tiền nhà TQĐ", "Tiền mạng TQĐ", "Tiền điện TQĐ", "Tiền rác TQĐ", "Nước chai TQĐ", "Nước bình TQĐ", "Vệ sinh máy lạnh TQĐ", "Công an TQĐ", "Tiền nhà HBC", "Tiền mạng HBC", "Tiền điện HBC", "Tiền rác HBC", "Nước chai HBC", "Nước bình HBC", "Vệ sinh máy lạnh HBC", "Công an HBC", "Lương chị Xuân", "Bé cháu dọn phòng", "Seeding", "Chạy QC", "Netflix", "Kẹo + cf", "Nước tẩy bồn cầu", "Nước giặt", "Sữa tắm", "Dầu gội", "Bàn chải đánh răng", "Giấy rút", "Giấy vệ sinh", "Túi rác", "Xịt côn trùng", "Bộ drap nệm mới", "Khăn tắm bổ sung", "Khác (Nhập tay)"]
@@ -182,9 +198,9 @@ ds_hang_muc_cp = ["Tiền nhà TQĐ", "Tiền mạng TQĐ", "Tiền điện TQĐ
 if "dp_search_key" not in st.session_state: st.session_state.dp_search_key = ""
 if "cp_search_key" not in st.session_state: st.session_state.cp_search_key = ""
 
-# ================= GIAO DIỆN HEADER (LOGO Ở DÒNG RIÊNG) =================
+# ================= GIAO DIỆN HEADER =================
 if os.path.exists("Logo.png"):
-    st.image("Logo.png", width=200)
+    st.image("Logo.png", width=250)
 else:
     st.markdown("<h1 style='margin-bottom: -15px;'>🏡</h1>", unsafe_allow_html=True)
 
@@ -192,9 +208,24 @@ st.title("Hệ Thống Quản Lý Duti's Home")
 
 tab1, tab2, tab3 = st.tabs(["📊 Tổng quan", "🛏️ Đặt phòng", "🧾 Chi phí"])
 
+# Hàm tính mốc tháng kinh doanh (Ngày 12)
+def get_biz_month(target_date):
+    if target_date.day >= 12:
+        s_date = date(target_date.year, target_date.month, 12)
+        if target_date.month == 12:
+            e_date = date(target_date.year + 1, 1, 11)
+        else:
+            e_date = date(target_date.year, target_date.month + 1, 11)
+    else:
+        e_date = date(target_date.year, target_date.month, 11)
+        if target_date.month == 1:
+            s_date = date(target_date.year - 1, 12, 12)
+        else:
+            s_date = date(target_date.year, target_date.month - 1, 12)
+    return s_date, e_date
+
 # ================= 2. TAB 1: TỔNG QUAN =================
 with tab1:
-    # ------------------ PHẦN ĐẶT PHÒNG ------------------
     st.header("🛏️ Đặt phòng")
     st.subheader("Lượt đặt phòng hiện tại và 5 ngày tới")
     
@@ -343,20 +374,13 @@ with tab1:
     st.header("🧾 Chi phí")
     
     today_date = date.today()
-    if today_date.day >= 12:
-        start_date = date(today_date.year, today_date.month, 12)
-        if today_date.month == 12: end_date = date(today_date.year + 1, 1, 11)
-        else: end_date = date(today_date.year, today_date.month + 1, 11)
-    else:
-        end_date = date(today_date.year, today_date.month, 11)
-        if today_date.month == 1: start_date = date(today_date.year - 1, 12, 12)
-        else: start_date = date(today_date.year, today_date.month - 1, 12)
+    curr_start, curr_end_full = get_biz_month(today_date)
 
-    st.markdown(f"#### Chi phí trong tháng kinh doanh (Từ {start_date.strftime('%d/%m/%Y')} đến {end_date.strftime('%d/%m/%Y')})")
+    st.markdown(f"#### Chi phí trong tháng kinh doanh (Từ {curr_start.strftime('%d/%m/%Y')} đến {curr_end_full.strftime('%d/%m/%Y')})")
     
     if not df_cp.empty:
         df_cp['Ngày_parsed'] = pd.to_datetime(df_cp['Ngày'], format='%d/%m/%Y', errors='coerce').dt.date
-        mask_thang = (df_cp['Ngày_parsed'] >= start_date) & (df_cp['Ngày_parsed'] <= end_date)
+        mask_thang = (df_cp['Ngày_parsed'] >= curr_start) & (df_cp['Ngày_parsed'] <= curr_end_full)
         df_cp_thang = df_cp[mask_thang].copy()
         
         if not df_cp_thang.empty:
@@ -402,10 +426,9 @@ with tab1:
                             st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
                             if st.form_submit_button("Đã thanh toán", use_container_width=True):
                                 so_tien_luu = parse_tien(nhap_tien_tt)
-                                data_update_tt = [{'range': f'D{idx + 2}', 'values': [['Đã thanh toán']]}]
+                                data_update_tt = [{'range': f'C{idx + 2}', 'values': [['Đã thanh toán']]}]
                                 try:
                                     sheet_tt.batch_update(data_update_tt, value_input_option='USER_ENTERED')
-                                    
                                     if sheet_cp is not None:
                                         col_c = sheet_cp.col_values(3)
                                         dong_moi_cp = len(col_c) + 1
@@ -421,7 +444,7 @@ with tab1:
             except: pass
             
         if not has_nhac_nho:
-            st.success("Tất cả các khoản chi hàng tháng đều đã được thanh toán hoặc chưa tới hạn.")
+            st.success("Tất cả các khoản chi tiêu hàng tháng đều đã được thanh toán hoặc chưa tới hạn.")
 
     if not df_cp.empty:
         if 'Số tiền gốc' not in df_cp.columns:
@@ -435,6 +458,210 @@ with tab1:
         c_tc2.info(f"**Duti tạm chi:** {format_tien_ui(tien_duti)}")
 
     st.markdown("---")
+
+    # ------------------ PHẦN HIỆU SUẤT ------------------
+    st.header(f"📊 Hiệu suất (Tháng {curr_start.month})")
+    
+    # 1. LẤY DOANH THU TỪ SHEET LỢI NHUẬN ĐỂ CHUẨN XÁC 100%
+    data_ln = get_raw_ln()
+    rev_curr = 0
+    rev_prev = 0
+    avg_rev_6m = 0
+    
+    if data_ln and len(data_ln) > 1:
+        df_ln_perf = pd.DataFrame(data_ln[1:], columns=data_ln[0])
+        if 'Tháng' in df_ln_perf.columns and 'Tổng doanh thu' in df_ln_perf.columns:
+            df_ln_perf = df_ln_perf[df_ln_perf['Tháng'] != '']
+            df_ln_perf['DT_Goc'] = df_ln_perf['Tổng doanh thu'].apply(parse_tien)
+            df_ln_perf['Thang_Date'] = pd.to_datetime(df_ln_perf['Tháng'], format='%m/%Y', errors='coerce')
+            
+            thang_nay_str = curr_start.strftime("%m/%Y")
+            prev_start_biz, prev_end_biz = get_biz_month(curr_start - timedelta(days=1))
+            thang_truoc_str = prev_start_biz.strftime("%m/%Y")
+            
+            try: rev_curr = df_ln_perf[df_ln_perf['Tháng'] == thang_nay_str]['DT_Goc'].iloc[0]
+            except: rev_curr = 0
+            
+            try: rev_prev = df_ln_perf[df_ln_perf['Tháng'] == thang_truoc_str]['DT_Goc'].iloc[0]
+            except: rev_prev = 0
+            
+            curr_month_datetime = datetime(curr_start.year, curr_start.month, 1)
+            df_6m = df_ln_perf[df_ln_perf['Thang_Date'] <= curr_month_datetime].sort_values('Thang_Date').tail(6)
+            if not df_6m.empty:
+                avg_rev_6m = df_6m['DT_Goc'].mean()
+
+    # 2. TÍNH TỶ LỆ LẤP PHÒNG & TÁCH DOANH THU CHO TỪNG PHÒNG
+    try:
+        df_perf = df_valid_dates.copy()
+        df_perf['Date_In_d'] = df_perf['Date_In'].dt.date
+        df_perf['Date_Out_d'] = df_perf['Date_Out'].dt.date
+        df_perf['DT_num'] = df_perf['Doanh thu'].apply(parse_tien)
+
+        curr_end_occ = min(today_date, curr_end_full)
+        days_passed_occ = (curr_end_occ - curr_start).days + 1
+        if days_passed_occ <= 0: days_passed_occ = 1
+        
+        prev_days_occ = (prev_end_biz - prev_start_biz).days + 1
+
+        room_stats = []
+        phong_list = ["101 Moon", "102 Noir", "103 Cine", "201 Sun", "202 Haven", "203 Garden"]
+        
+        total_paid_nights_occ_curr = 0
+        total_avail_nights_occ_curr = 0
+        total_paid_nights_full_curr = 0
+        
+        total_paid_nights_occ_prev = 0
+        total_avail_nights_occ_prev = 0
+        total_paid_nights_full_prev = 0
+
+        for p in phong_list:
+            df_p = df_perf[df_perf['Phòng'] == p]
+            
+            p_paid_nights_occ_curr = 0
+            p_0vnd_nights_occ_curr = 0
+            p_paid_nights_full_curr = 0
+            p_rev_full_curr = 0
+            
+            p_paid_nights_occ_prev = 0
+            p_0vnd_nights_occ_prev = 0
+            p_paid_nights_full_prev = 0
+            p_rev_full_prev = 0
+            
+            for _, r in df_p.iterrows():
+                in_d = r['Date_In_d']
+                out_d = r['Date_Out_d']
+                dt = r['DT_num'] if not pd.isna(r['DT_num']) else 0
+                
+                total_nights_booking = (out_d - in_d).days
+                if total_nights_booking <= 0: continue
+                
+                # THÁNG NÀY
+                overlap_s_occ_curr = max(in_d, curr_start)
+                overlap_e_occ_curr = min(out_d, curr_end_occ + timedelta(days=1))
+                n_occ_curr = (overlap_e_occ_curr - overlap_s_occ_curr).days if overlap_s_occ_curr < overlap_e_occ_curr else 0
+                
+                overlap_s_full_curr = max(in_d, curr_start)
+                overlap_e_full_curr = min(out_d, curr_end_full + timedelta(days=1))
+                n_full_curr = (overlap_e_full_curr - overlap_s_full_curr).days if overlap_s_full_curr < overlap_e_full_curr else 0
+                
+                if dt <= 0:
+                    p_0vnd_nights_occ_curr += max(0, n_occ_curr)
+                else:
+                    p_paid_nights_occ_curr += max(0, n_occ_curr)
+                    p_paid_nights_full_curr += max(0, n_full_curr)
+                    p_rev_full_curr += (dt / total_nights_booking) * max(0, n_full_curr)
+                    
+                # THÁNG TRƯỚC
+                overlap_s_occ_prev = max(in_d, prev_start_biz)
+                overlap_e_occ_prev = min(out_d, prev_end_biz + timedelta(days=1))
+                n_occ_prev = (overlap_e_occ_prev - overlap_s_occ_prev).days if overlap_s_occ_prev < overlap_e_occ_prev else 0
+                
+                overlap_s_full_prev = max(in_d, prev_start_biz)
+                overlap_e_full_prev = min(out_d, prev_end_biz + timedelta(days=1))
+                n_full_prev = (overlap_e_full_prev - overlap_s_full_prev).days if overlap_s_full_prev < overlap_e_full_prev else 0
+                
+                if dt <= 0:
+                    p_0vnd_nights_occ_prev += max(0, n_occ_prev)
+                else:
+                    p_paid_nights_occ_prev += max(0, n_occ_prev)
+                    p_paid_nights_full_prev += max(0, n_full_prev)
+                    p_rev_full_prev += (dt / total_nights_booking) * max(0, n_full_prev)
+                    
+            # TÍNH TOÁN HIỆU SUẤT TỪNG PHÒNG
+            p_avail_nights_occ_curr = days_passed_occ - p_0vnd_nights_occ_curr
+            if p_avail_nights_occ_curr > 0:
+                p_occ_rate_curr = (p_paid_nights_occ_curr / p_avail_nights_occ_curr) * 100
+                p_occ_str = f"{p_occ_rate_curr:.1f}%"
+            else:
+                p_occ_rate_curr = 0
+                p_occ_str = "Ngưng KD"
+                
+            p_adr_curr = p_rev_full_curr / p_paid_nights_full_curr if p_paid_nights_full_curr > 0 else 0
+            
+            p_avail_nights_occ_prev = prev_days_occ - p_0vnd_nights_occ_prev
+            p_occ_rate_prev = (p_paid_nights_occ_prev / p_avail_nights_occ_prev) * 100 if p_avail_nights_occ_prev > 0 else 0
+            p_adr_prev = p_rev_full_prev / p_paid_nights_full_prev if p_paid_nights_full_prev > 0 else 0
+            
+            # FORMAT HTML CHO BẢNG (ADR dùng delta_money, Occ dùng delta_html)
+            if p_occ_str != "Ngưng KD":
+                html_occ = f"{p_occ_str}{get_delta_html(p_occ_rate_curr, p_occ_rate_prev)}"
+            else:
+                html_occ = p_occ_str
+                
+            html_adr = f"{format_tien_ui(p_adr_curr)}{get_delta_money_html(p_adr_curr, p_adr_prev)}"
+            html_rev = f"{format_tien_ui(p_rev_full_curr)}{get_delta_html(p_rev_full_curr, p_rev_full_prev)}"
+            
+            room_stats.append({
+                "Phòng": p,
+                "Doanh thu": html_rev,
+                "Lấp phòng": html_occ,
+                "Giá TB 1 đêm": html_adr
+            })
+            
+            total_paid_nights_occ_curr += p_paid_nights_occ_curr
+            total_avail_nights_occ_curr += p_avail_nights_occ_curr
+            total_paid_nights_full_curr += p_paid_nights_full_curr
+            
+            total_paid_nights_occ_prev += p_paid_nights_occ_prev
+            total_avail_nights_occ_prev += p_avail_nights_occ_prev
+            total_paid_nights_full_prev += p_paid_nights_full_prev
+
+        # TÍNH TOÁN HIỆU SUẤT TỔNG TOÀN HOME
+        if total_avail_nights_occ_curr > 0:
+            home_occ_rate_curr = (total_paid_nights_occ_curr / total_avail_nights_occ_curr) * 100
+            home_occ_str = f"{home_occ_rate_curr:.1f}%"
+        else:
+            home_occ_rate_curr = 0
+            home_occ_str = "Ngưng KD"
+            
+        home_occ_rate_prev = (total_paid_nights_occ_prev / total_avail_nights_occ_prev) * 100 if total_avail_nights_occ_prev > 0 else 0
+            
+        home_adr_curr = rev_curr / total_paid_nights_full_curr if total_paid_nights_full_curr > 0 else 0
+        home_adr_prev = rev_prev / total_paid_nights_full_prev if total_paid_nights_full_prev > 0 else 0
+
+        # HIỂN THỊ UI KHỐI METRIC TRÊN CÙNG
+        col_pf1, col_pf2, col_pf3, col_pf4 = st.columns(4)
+        d_rev = get_delta_val(rev_curr, rev_prev)
+        col_pf1.metric("Doanh thu tháng này", format_tien_ui(rev_curr), f"{d_rev:.1f}%" if rev_prev else None)
+        col_pf2.metric("Doanh thu tháng trước", format_tien_ui(rev_prev))
+        col_pf3.metric("Bình quân 6 tháng", format_tien_ui(avg_rev_6m))
+        
+        d_occ = get_delta_val(home_occ_rate_curr, home_occ_rate_prev)
+        
+        home_occ_str = f"{home_occ_rate_curr:.1f}%" if total_avail_nights_occ_curr > 0 else "Ngưng KD"
+        col_pf4.metric("Tỷ lệ lấp phòng chung", home_occ_str, f"{d_occ:.1f}%" if home_occ_rate_prev and total_avail_nights_occ_curr > 0 else None)
+
+        html_adr_chung = f"Giá trị trung bình 1 đêm (ADR chung): {format_tien_ui(home_adr_curr)}{get_delta_money_html(home_adr_curr, home_adr_prev)}"
+        
+        # In thẳng HTML không lùi lề để tránh lỗi Code Block của Markdown
+        st.markdown("<div style='padding: 1rem; border-radius: 0.5rem; background-color: #1e293b; border: 1px solid #334155; color: #e2e8f0; margin-bottom: 1rem;'>ℹ️ <strong>" + html_adr_chung + "</strong></div>", unsafe_allow_html=True)
+
+        st.markdown("##### Chi tiết tỷ lệ lấp phòng từng phòng")
+        
+        html_table = "<table style='width:100%; border-collapse: collapse; text-align: left; margin-bottom: 20px; font-size: 0.95em;'>"
+        html_table += "<tr style='border-bottom: 1px solid #334155; background-color: #0f172a; color: #94a3b8;'>"
+        html_table += "<th style='padding: 12px;'>Phòng</th>"
+        html_table += "<th style='padding: 12px;'>Doanh thu</th>"
+        html_table += "<th style='padding: 12px;'>Lấp phòng</th>"
+        html_table += "<th style='padding: 12px;'>Giá TB 1 đêm</th>"
+        html_table += "</tr>"
+        
+        for stat in room_stats:
+            html_table += "<tr style='border-bottom: 1px solid #1e293b; background-color: #0f172a;'>"
+            html_table += f"<td style='padding: 12px; font-weight: bold; color: #f8fafc;'>{stat['Phòng']}</td>"
+            html_table += f"<td style='padding: 12px; color: #f8fafc;'>{stat['Doanh thu']}</td>"
+            html_table += f"<td style='padding: 12px; color: #f8fafc;'>{stat['Lấp phòng']}</td>"
+            html_table += f"<td style='padding: 12px; color: #f8fafc;'>{stat['Giá TB 1 đêm']}</td>"
+            html_table += "</tr>"
+            
+        html_table += "</table>"
+        
+        st.markdown(html_table, unsafe_allow_html=True)
+
+    except Exception as e:
+        st.error(f"Lỗi khi tính toán hiệu suất: {e}")
+
+    st.markdown("---")
     
     # ------------------ PHẦN LỢI NHUẬN ------------------
     st.header("📈 Lợi nhuận")
@@ -445,7 +672,6 @@ with tab1:
             get_raw_ln.clear()
             st.rerun()
             
-    data_ln = get_raw_ln()
     if data_ln and len(data_ln) > 1:
         df_ln = pd.DataFrame(data_ln[1:], columns=data_ln[0])
         if 'Tháng' in df_ln.columns and 'Tổng doanh thu' in df_ln.columns and 'Tổng chi phí' in df_ln.columns and 'Lợi nhuận' in df_ln.columns:
@@ -457,17 +683,12 @@ with tab1:
             df_ln_clean = df_ln_clean[df_ln_clean['Tháng_Gốc'] != '']
             
             if not df_ln_clean.empty:
-                today_d = date.today()
-                if today_d.day >= 12:
-                    current_biz_month = datetime(today_d.year, today_d.month, 1)
-                else:
-                    if today_d.month == 1:
-                        current_biz_month = datetime(today_d.year - 1, 12, 1)
-                    else:
-                        current_biz_month = datetime(today_d.year, today_d.month - 1, 1)
-
                 df_ln_clean['Tháng_Date'] = pd.to_datetime(df_ln_clean['Tháng_Gốc'], format='%m/%Y', errors='coerce')
-                df_ln_clean = df_ln_clean[df_ln_clean['Tháng_Date'] <= current_biz_month]
+                
+                curr_month_datetime = datetime(curr_start.year, curr_start.month, 1)
+                if curr_start.month == 12 and today_date.day < 12:
+                    pass
+                df_ln_clean = df_ln_clean[df_ln_clean['Tháng_Date'] <= curr_month_datetime]
                 df_ln_clean = df_ln_clean.sort_values('Tháng_Date').tail(6)
                 
                 thang_order = df_ln_clean['Tháng_Gốc'].tolist()
@@ -583,7 +804,7 @@ with tab2:
                 btn_luu_dp = st.form_submit_button("Lưu")
             with col_btn2:
                 st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
-                btn_xoa_dp = st.form_submit_button("Xóa")
+                btn_xoa_dp = st.form_submit_button("🗑️ Xóa")
             xac_nhan_xoa = col_btn3.checkbox("⚠️ Xác nhận muốn xóa lượt đặt này")
 
     if btn_luu_dp:
@@ -601,11 +822,11 @@ with tab2:
         df_trung_e = df_valid_dates[mask_trung_e]
         
         if not e_khach: 
-            st.error("❌ Hãy nhập tên khách!")
+            st.error("❌ Vui lòng nhập tên khách!")
         elif e_ngay_out <= e_ngay_in: 
             st.error("❌ Ngày check-out phải lớn hơn ngày check-in!")
         elif not df_trung_e.empty and not e_bo_qua: 
-            st.error("🚨 PHÁT HIỆN TRÙNG LỊCH! Hãy đánh dấu 'Bỏ qua cảnh báo' và bấm Lưu nếu vẫn muốn tạo.")
+            st.error("🚨 PHÁT HIỆN TRÙNG LỊCH! Đánh dấu 'Bỏ qua cảnh báo' và bấm Lưu nếu vẫn muốn tạo.")
             st.dataframe(df_trung_e[['Phòng', 'Khách', 'Ngày check in', 'Ngày check out']])
         else:
             c_phong = get_col_letter('Phòng', 'B')
@@ -777,7 +998,7 @@ with tab3:
                 btn_luu_cp = st.form_submit_button("Lưu")
             with c_btn_cp2:
                 st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
-                btn_xoa_cp = st.form_submit_button("Xóa")
+                btn_xoa_cp = st.form_submit_button("🗑️ Xóa")
             xac_nhan_cp_xoa = c_btn_cp3.checkbox("⚠️ Xác nhận muốn xóa khoản này")
             
     if sheet_cp is None and (btn_luu_cp or btn_xoa_cp):
@@ -785,7 +1006,7 @@ with tab3:
     else:
         if btn_luu_cp:
             if not e_cp_hm: 
-                st.error("❌ Hãy điền hạng mục chi phí!")
+                st.error("❌ Vui lòng điền hạng mục chi phí!")
             else:
                 e_cp_tien = parse_tien(e_cp_tien_str)
                 if cp_idx is None: 
@@ -812,7 +1033,7 @@ with tab3:
 
         if btn_xoa_cp:
             if not xac_nhan_cp_xoa: 
-                st.error("❌ Hãy đánh dấu xác nhận xóa!")
+                st.error("❌ Vui lòng tick xác nhận xóa!")
             else:
                 row_cp_sheet_idx = cp_idx + 2
                 data_xoa_cp = [{'range': f'C{row_cp_sheet_idx}:F{row_cp_sheet_idx}', 'values': [['', '', '', '']]}]
@@ -820,6 +1041,6 @@ with tab3:
                     sheet_cp.batch_update(data_xoa_cp, value_input_option='USER_ENTERED')
                     st.session_state.cp_search_key = ""
                     get_raw_cp.clear()
-                    st.success("✅ Đã xóa an toàn!")
+                    st.success("✅ Đã xóa!")
                     st.rerun()
                 except Exception as e: st.error(f"❌ Lỗi: {e}")
